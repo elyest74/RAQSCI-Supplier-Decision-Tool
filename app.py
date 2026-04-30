@@ -246,9 +246,7 @@ def generate_pdf(df,fig):
 
     elems.append(PageBreak())
 
-    img=tempfile.NamedTemporaryFile(delete=False,suffix=".png").name
-    fig.write_image(img)
-    elems.append(Image(img,width=450,height=300))
+   elems.append(Paragraph("Matriz Kraljic incluida en la aplicación interactiva.", styles['Normal']))
 
     elems.append(PageBreak())
 
