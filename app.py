@@ -7,10 +7,8 @@ import tempfile
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
-from openpyxl.styles import PatternFill, Font
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, PageBreak
-from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 
@@ -40,44 +38,44 @@ mapping = {
 }
 
 # -------------------------------
-# PESOS POR SECTOR
+# PESOS
 # -------------------------------
-def get_sector_weights(sector):
+def get_weights(sector):
     s = sector.lower()
     if "moda" in s or "retail" in s:
         return {"R":0.05,"A":0.20,"Q":0.30,"S":0.20,"C":0.15,"I":0.10}
-    elif "industrial" in s:
+    if "industrial" in s:
         return {"R":0.10,"A":0.35,"Q":0.25,"S":0.10,"C":0.15,"I":0.05}
-    elif "farmacéutico" in s:
+    if "farmacéutico" in s:
         return {"R":0.30,"A":0.25,"Q":0.25,"S":0.10,"C":0.05,"I":0.05}
     return {"R":0.10,"A":0.25,"Q":0.20,"S":0.15,"C":0.20,"I":0.10}
 
 # -------------------------------
 # RAQSCI
 # -------------------------------
-def calculate_raqsci(r,a,q,s,c,i,sector):
-    w = get_sector_weights(sector)
-    score = r*w["R"] + a*w["A"] + q*w["Q"] + s*w["S"] + c*w["C"] + i*w["I"]
+def calc_raqsci(r,a,q,s,c,i,sector):
+    w = get_weights(sector)
+    score = r*w["R"]+a*w["A"]+q*w["Q"]+s*w["S"]+c*w["C"]+i*w["I"]
     status = "APTO" if r>=3 and q>=3 and a>=3 else "NO APTO"
     return round(score,2), status
 
 # -------------------------------
 # KRALJIC
 # -------------------------------
-def calculate_kraljic(q,c,a):
-    impacto = (q+c)/2
-    riesgo = a
+def calc_kraljic(q,c,a):
+    impacto=(q+c)/2
+    riesgo=a
     if impacto>=4 and riesgo>=4:
-        return impacto, riesgo, "Estratégica"
+        return impacto,riesgo,"Estratégica"
     elif impacto>=4:
-        return impacto, riesgo, "Apalancada"
+        return impacto,riesgo,"Apalancada"
     elif riesgo>=4:
-        return impacto, riesgo, "Cuello de botella"
+        return impacto,riesgo,"Cuello de botella"
     else:
-        return impacto, riesgo, "No crítico"
+        return impacto,riesgo,"No crítico"
 
 # -------------------------------
-# EXCEL
+# EXCEL TEMPLATE
 # -------------------------------
 def generate_excel():
     wb = Workbook()
@@ -100,7 +98,7 @@ def generate_excel():
     for i in range(1,len(headers)+1):
         ws.column_dimensions[get_column_letter(i)].width = 20
 
-    # validación
+    # desplegable
     dv = DataValidation(type="list", formula1='"Bajo (1),Medio (3),Alto (5)"')
     ws.add_data_validation(dv)
 
@@ -112,7 +110,6 @@ def generate_excel():
 
     # hoja guía
     ws2 = wb.create_sheet("COMO_PUNTUAR")
-
     ws2.append(["CRITERIO","CÓMO MEDIR","BAJO (1)","MEDIO (3)","ALTO (5)"])
     ws2.append(["Defectos","% defectos",">5%","~2%","<0.5%"])
     ws2.append(["Lead time","semanas",">8","~4","<2"])
@@ -126,26 +123,32 @@ def generate_excel():
 # -------------------------------
 # PROCESAR
 # -------------------------------
-def process(df, sector):
+def process(df,sector):
 
+    # validación
+    for col in df.columns[3:]:
+        if df[col].isnull().any():
+            st.error(f"Valores vacíos en {col}")
+            st.stop()
+
+    # mapping
     for col in df.columns[3:]:
         df[col] = df[col].map(mapping)
 
-    results=[]
-
+    data=[]
     for _,row in df.iterrows():
 
-        r = row[3:6].mean()
-        a = row[6:9].mean()
-        q = row[9:12].mean()
-        s = row[12:15].mean()
-        c = row[15:19].mean()
-        i = row[19:22].mean()
+        r=row[3:6].mean()
+        a=row[6:9].mean()
+        q=row[9:12].mean()
+        s=row[12:15].mean()
+        c=row[15:19].mean()
+        i=row[19:22].mean()
 
-        score,status = calculate_raqsci(r,a,q,s,c,i,sector)
-        impacto,riesgo,k = calculate_kraljic(q,c,a)
+        score,status = calc_raqsci(r,a,q,s,c,i,sector)
+        impacto,riesgo,k = calc_kraljic(q,c,a)
 
-        results.append({
+        data.append({
             "Proveedor":row["Proveedor"],
             "Score":score,
             "Estado":status,
@@ -155,14 +158,15 @@ def process(df, sector):
             "C":c,"Q":q
         })
 
-    return pd.DataFrame(results)
+    return pd.DataFrame(data)
 
 # -------------------------------
 # MATRIZ
 # -------------------------------
 def plot_matrix(df):
-    fig = go.Figure()
-    colors_map = {
+    fig=go.Figure()
+
+    colors_map={
         "Estratégica":"red",
         "Apalancada":"green",
         "Cuello de botella":"orange",
@@ -170,10 +174,11 @@ def plot_matrix(df):
     }
 
     for cat in df["Kraljic"].unique():
-        sub = df[df["Kraljic"]==cat]
+        sub=df[df["Kraljic"]==cat]
         fig.add_trace(go.Scatter(
             x=sub["Impacto"], y=sub["Riesgo"],
-            mode="markers", name=cat,
+            mode="markers",
+            name=cat,
             marker=dict(size=12,color=colors_map[cat]),
             text=sub["Proveedor"],
             hovertemplate="%{text}"
@@ -188,14 +193,14 @@ def plot_matrix(df):
 # -------------------------------
 # PDF
 # -------------------------------
-def generate_pdf(df, fig):
+def generate_pdf(df,fig):
 
-    styles = getSampleStyleSheet()
-    buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    doc = SimpleDocTemplate(buffer.name, pagesize=A4)
+    styles=getSampleStyleSheet()
+    buffer=tempfile.NamedTemporaryFile(delete=False,suffix=".pdf")
+    doc=SimpleDocTemplate(buffer.name,pagesize=A4)
 
     elems=[]
-    top = df.sort_values(by="Score",ascending=False).iloc[0]
+    top=df.sort_values(by="Score",ascending=False).iloc[0]
 
     elems.append(Paragraph("Strategic Supplier Decision Tool",styles["Title"]))
     elems.append(Spacer(1,200))
@@ -206,7 +211,7 @@ def generate_pdf(df, fig):
     elems.append(Paragraph(f"Proveedor recomendado: {top['Proveedor']}",styles["Normal"]))
     elems.append(PageBreak())
 
-    img = tempfile.NamedTemporaryFile(delete=False,suffix=".png").name
+    img=tempfile.NamedTemporaryFile(delete=False,suffix=".png").name
     fig.write_image(img)
     elems.append(Image(img,width=400,height=300))
     elems.append(PageBreak())
@@ -223,7 +228,7 @@ def generate_pdf(df, fig):
 st.markdown("""
 <div style='background:#1F3A5F;padding:20px'>
 <h1 style='color:white'>Strategic Supplier Decision Tool</h1>
-<p style='color:white'>Integrated Kraljic & RAQSCI Analysis</p>
+<p style='color:white'>Integrated Kraljic & RAQSCI Analysis for Procurement Leaders</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -231,24 +236,43 @@ sector = st.selectbox("Sector",SECTORES)
 
 st.markdown("""
 ### Instrucciones
-1. Descarga plantilla  
-2. Rellena  
-3. Sube archivo  
-4. Analiza resultados  
+1. Descargar plantilla  
+2. Completar datos  
+3. Subir archivo  
+4. Analizar resultados  
 """)
 
+# SIDEBAR
 with st.sidebar:
-    st.download_button("Descargar Excel",generate_excel(),"plantilla.xlsx")
-    file = st.file_uploader("Upload",type=["xlsx"])
+    st.download_button("📥 Descargar plantilla Excel", generate_excel(), "plantilla.xlsx")
+    file = st.file_uploader("📤 Upload Excel", type=["xlsx"])
 
+# -------------------------------
+# EJECUCIÓN
+# -------------------------------
 if file:
     df_raw = pd.read_excel(file)
-    df = process(df_raw,sector)
+    df = process(df_raw, sector)
 
-    st.dataframe(df)
+    st.subheader("Dashboard ejecutivo")
 
-    fig = plot_matrix(df)
-    st.plotly_chart(fig)
+    col1, col2 = st.columns([2,1])
+
+    with col1:
+        fig = plot_matrix(df)
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        ranking = df.sort_values(by="Score",ascending=False)[
+            ["Proveedor","Score","Kraljic","Estado"]
+        ]
+        st.dataframe(ranking)
+
+    st.subheader("Recomendación")
+
+    top = df.sort_values(by="Score",ascending=False).iloc[0]
+
+    st.success(f"Se recomienda adjudicar al proveedor {top['Proveedor']}")
 
     pdf = generate_pdf(df,fig)
-    st.download_button("Descargar PDF",pdf,"report.pdf")
+    st.download_button("📄 Descargar informe PDF", pdf, "report.pdf")
