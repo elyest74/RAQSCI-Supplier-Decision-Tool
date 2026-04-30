@@ -79,6 +79,7 @@ with st.sidebar:
     )
 
     st.markdown("---")
+    st.image("elymar.png", width=120)
     st.markdown("**Desarrollado por Elymar Estévez**")
 
 # -------------------------------
