@@ -57,7 +57,7 @@ def calculate_raqsci_score(r, a, q, s, c, i, strategy):
     return round(score, 2), "APTO", alert
 
 # -------------------------------
-# EXCEL TEMPLATE
+# EXCEL TEMPLATE (sin xlsxwriter)
 # -------------------------------
 def generate_excel_template():
     columns = [
@@ -107,7 +107,7 @@ def generate_excel_template():
     df = pd.concat([df, pd.DataFrame([example])])
 
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='RAQSCI_INPUT')
 
     return output.getvalue()
@@ -199,14 +199,12 @@ with col_result:
         st.markdown("### Comparativa")
         st.dataframe(df, use_container_width=True)
 
-        # Alertas
         for _, row in df.iterrows():
             if row["Estado"] == "NO APTO":
                 st.error(f"{row['Proveedor']} no cumple criterios mínimos")
             if row["Alerta"]:
                 st.warning(f"{row['Proveedor']}: {row['Alerta']}")
 
-        # Radar
         st.markdown("### Radar comparativo")
 
         categories = ['R', 'A', 'Q', 'S', 'C', 'I']
