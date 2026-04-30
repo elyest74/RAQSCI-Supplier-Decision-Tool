@@ -1,3 +1,4 @@
+# ================= IMPORTS =================
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -17,9 +18,25 @@ st.set_page_config(layout="wide")
 st.markdown("""
 <div style='background:#1F3A5F;padding:25px'>
 <h1 style='color:white'>Strategic Supplier Decision Tool</h1>
+<p style='color:white'>Desarrollado por Elymar Estévez</p>
 <p style='color:white'>Integrated Kraljic & RAQSCI Analysis for Procurement Leaders</p>
 </div>
 """, unsafe_allow_html=True)
+
+# ================= INSTRUCCIONES =================
+st.markdown("""
+### Cómo utilizar la herramienta
+
+1. Descarga la plantilla Excel  
+2. Completa la evaluación de proveedores  
+3. Sube el archivo  
+4. La herramienta generará automáticamente:
+   - Evaluación RAQSCI
+   - Clasificación Kraljic
+   - Identificación de riesgos
+   - Recomendación estratégica  
+5. Descarga el informe en PDF  
+""")
 
 # ================= CONFIG =================
 SECTORES = [
@@ -67,23 +84,9 @@ def generate_excel():
         for c in range(4,len(headers)+1):
             dv.add(ws.cell(row=r,column=c))
 
-    ws2 = wb.create_sheet("GUIA")
-    ws2.append(["CRITERIO","BAJO","MEDIO","ALTO"])
-    ws2.append(["Calidad",">5% defectos","~2%","<1%"])
-    ws2.append(["Leadtime",">8","~4","<2"])
-    ws2.append(["Dependencia","1 proveedor","2","3+"])
-
     output = io.BytesIO()
     wb.save(output)
     return output.getvalue()
-
-# ================= VALIDACIÓN =================
-def validate(df):
-    required = ["Proveedor","Categoria","Subcategoria"]
-    for col in required:
-        if col not in df.columns:
-            st.error(f"Falta columna: {col}")
-            st.stop()
 
 # ================= PROCESS =================
 def process(df,sector):
@@ -119,7 +122,12 @@ def process(df,sector):
 
         data.append({
             "Proveedor":row["Proveedor"],
-            "R":r,"A":a,"Q":q,"S":s,"C":c,"I":i,
+            "Regulatory":r,
+            "Assurance":a,
+            "Quality":q,
+            "Service":s,
+            "Cost":c,
+            "Innovation":i,
             "Score":round(score,2),
             "Estado":"APTO" if r>=3 and q>=3 else "NO APTO",
             "Impacto":impacto,
@@ -132,9 +140,9 @@ def process(df,sector):
 
 # ================= KPIs =================
 def render_kpis(df):
+
     total=len(df)
     aptos=len(df[df["Estado"]=="APTO"])
-    no_aptos=total-aptos
     estrategicos=len(df[df["Kraljic"]=="Estratégica"])
 
     col1,col2,col3 = st.columns(3)
@@ -142,37 +150,32 @@ def render_kpis(df):
 
     col1.metric("Proveedores",total)
     col2.metric("% APTOS",round(aptos/total*100,1))
-    col3.metric("% NO APTOS",round(no_aptos/total*100,1))
+    col3.metric("% Estratégicos",round(estrategicos/total*100,1))
     col4.metric("Score medio",round(df["Score"].mean(),2))
     col5.metric("Riesgo medio",round(df["Riesgo"].mean(),2))
-    col6.metric("% Estratégicos",round(estrategicos/total*100,1))
+    col6.metric("Dependencia", "Alta" if total<=2 else "Diversificada")
 
 # ================= MATRIZ =================
 def plot_matrix(df):
-    fig=go.Figure()
 
+    fig=go.Figure()
     colors={"Estratégica":"#E74C3C","Apalancada":"#2ECC71","Cuello botella":"#F1C40F","No crítico":"#3498DB"}
 
-    for cat in df["Kraljic"].unique():
+    for cat in ["Estratégica","Apalancada","Cuello botella","No crítico"]:
         sub=df[df["Kraljic"]==cat]
+
         fig.add_trace(go.Scatter(
-            x=sub["Impacto"],y=sub["Riesgo"],
+            x=sub["Impacto"],
+            y=sub["Riesgo"],
             mode="markers",
             marker=dict(size=12,color=colors[cat]),
             text=sub["Proveedor"],
-            name=cat,
-            hovertemplate="<b>%{text}</b>"
+            name=cat
         ))
 
     fig.add_shape(type="line",x0=3,x1=3,y0=0,y1=5)
     fig.add_shape(type="line",x0=0,x1=5,y0=3,y1=3)
 
-    fig.add_annotation(x=4.5,y=4.5,text="Estratégica",showarrow=False)
-    fig.add_annotation(x=4.5,y=1,text="Apalancada",showarrow=False)
-    fig.add_annotation(x=1,y=4.5,text="Cuello botella",showarrow=False)
-    fig.add_annotation(x=1,y=1,text="No crítico",showarrow=False)
-
-    fig.update_layout(xaxis_title="Impacto",yaxis_title="Riesgo")
     return fig
 
 # ================= INSIGHTS =================
@@ -181,16 +184,13 @@ def generate_insights(df):
     insights=[]
 
     if df["Riesgo"].mean()>4:
-        insights.append("Riesgo de suministro elevado")
+        insights.append("Riesgo elevado de suministro")
 
     if len(df)<=2:
-        insights.append("Dependencia crítica de proveedores")
+        insights.append("Dependencia crítica")
 
     if len(df[df["Kraljic"]=="Estratégica"])/len(df)>0.5:
         insights.append("Alta concentración en proveedores estratégicos")
-
-    if df["Score"].mean()<3:
-        insights.append("Desempeño global bajo")
 
     incoherencias=df[(df["C_val"]>=4)&(df["Q_val"]<=2)]
     if len(incoherencias)>0:
@@ -198,16 +198,29 @@ def generate_insights(df):
 
     return insights
 
-# ================= ESTRATEGIA =================
-def generate_strategy(df):
+# ================= RECOMENDACIÓN 360 =================
+def generate_recommendation(df):
 
-    estrategia=[]
+    texto=[]
 
     for cat in ["Estratégica","Apalancada","Cuello botella","No crítico"]:
-        if len(df[df["Kraljic"]==cat])>0:
-            estrategia.append(f"Acción sobre categoría {cat}")
+        subset=df[df["Kraljic"]==cat]
 
-    return estrategia
+        if len(subset)==0: continue
+
+        if cat=="Estratégica":
+            texto.append("Desarrollar relaciones estratégicas a largo plazo")
+
+        elif cat=="Apalancada":
+            texto.append("Optimizar coste mediante negociación")
+
+        elif cat=="Cuello botella":
+            texto.append("Reducir riesgo y diversificar proveedores")
+
+        elif cat=="No crítico":
+            texto.append("Automatizar y simplificar compras")
+
+    return texto
 
 # ================= PDF =================
 def generate_pdf(df,fig):
@@ -219,38 +232,56 @@ def generate_pdf(df,fig):
     elems=[]
 
     elems.append(Paragraph("Strategic Supplier Decision Tool",styles['Title']))
+    elems.append(Paragraph("Desarrollado por Elymar Estévez",styles['Normal']))
     elems.append(PageBreak())
 
-    elems.append(Paragraph(f"Proveedores: {len(df)}",styles['Normal']))
+    elems.append(Paragraph("Executive Summary",styles['Heading2']))
     elems.append(Paragraph(f"Score medio: {round(df['Score'].mean(),2)}",styles['Normal']))
+
+    elems.append(PageBreak())
+
+    elems.append(Paragraph("Insights",styles['Heading2']))
+    for i in generate_insights(df):
+        elems.append(Paragraph(i,styles['Normal']))
+
     elems.append(PageBreak())
 
     img=tempfile.NamedTemporaryFile(delete=False,suffix=".png").name
     fig.write_image(img)
     elems.append(Image(img,width=450,height=300))
 
+    elems.append(PageBreak())
+
+    data=[df.columns.tolist()]+df.values.tolist()
+    elems.append(Table(data))
+
+    elems.append(PageBreak())
+
+    elems.append(Paragraph("Estrategia",styles['Heading2']))
+    for s in generate_recommendation(df):
+        elems.append(Paragraph(s,styles['Normal']))
+
     doc.build(elems)
 
     return open(buffer.name,"rb").read()
 
 # ================= UI =================
-st.info("Descarga la plantilla → complétala → súbela → analiza → descarga informe")
-
 sector = st.selectbox("Sector",SECTORES)
 
 with st.sidebar:
+    st.image("elymar.png", width=120)
     st.download_button("Descargar plantilla", generate_excel(),"plantilla.xlsx")
     file = st.file_uploader("Upload Excel")
 
 if file:
 
     df_raw = pd.read_excel(file)
-    validate(df_raw)
-
     df = process(df_raw,sector)
 
+    # BLOQUE 1
     render_kpis(df)
 
+    # BLOQUE 2 + 3
     col1,col2 = st.columns([2,1])
 
     with col1:
@@ -258,49 +289,18 @@ if file:
         st.plotly_chart(fig,use_container_width=True)
 
     with col2:
+        st.subheader("Ranking")
         st.dataframe(df.sort_values(by="Score",ascending=False))
 
-    st.subheader("RAQSCI")
-    st.dataframe(df[["Proveedor","R","A","Q","S","C","I","Score"]])
-
+    # BLOQUE 4
     st.subheader("Insights")
     for i in generate_insights(df):
         st.warning(i)
 
-    st.subheader("Estrategia")
-    for s in generate_strategy(df):
-        st.write("- "+s)
+    # BLOQUE 5
+    st.subheader("Recomendación estratégica")
+    for r in generate_recommendation(df):
+        st.write("- "+r)
 
     pdf=generate_pdf(df,fig)
-    st.download_button("Descargar PDF",pdf)
-
-# ================= MODO PRESENTACIÓN =================
-modo_presentacion = st.toggle("Modo presentación")
-
-if modo_presentacion and "df" in locals():
-
-    if "slide" not in st.session_state:
-        st.session_state.slide = 0
-
-    def next_slide():
-        st.session_state.slide += 1
-
-    def prev_slide():
-        st.session_state.slide -= 1
-
-    col1, col2, col3 = st.columns([1,2,1])
-
-    with col1:
-        if st.button("⬅"):
-            prev_slide()
-
-    with col3:
-        if st.button("➡"):
-            next_slide()
-
-    slide = st.session_state.slide
-
-    if slide == 1:
-        render_kpis(df)
-    elif slide == 2:
-        st.plotly_chart(fig)
+    st.download_button("Descargar informe PDF",pdf,"report.pdf")
