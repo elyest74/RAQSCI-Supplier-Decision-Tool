@@ -246,7 +246,7 @@ def generate_pdf(df,fig):
 
     elems.append(PageBreak())
 
-   elems.append(Paragraph("Matriz Kraljic incluida en la aplicación interactiva.", styles['Normal']))
+    elems.append(Paragraph("Matriz Kraljic incluida en la aplicación interactiva.", styles['Normal']))
 
     elems.append(PageBreak())
 
