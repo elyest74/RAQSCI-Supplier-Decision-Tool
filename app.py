@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import io
+from openpyxl import Workbook
 
 # -------------------------------
 # CONFIGURACIÓN GENERAL
@@ -41,15 +42,12 @@ def calculate_raqsci_score(r, a, q, s, c, i, strategy):
 
     score = (r*w[0] + a*w[1] + q*w[2] + s*w[3] + c*w[4] + i*w[5])
 
-    # Reglas críticas
     if r < 3 or q < 3 or a < 3:
         return round(score, 2), "NO APTO", "Fallo en criterio crítico"
 
-    # Penalización
     if a <= 2:
         score *= 0.85
 
-    # Alertas
     alert = None
     if c == 5 and (q <= 2 or a <= 2):
         alert = "Riesgo de compra barata"
@@ -57,10 +55,15 @@ def calculate_raqsci_score(r, a, q, s, c, i, strategy):
     return round(score, 2), "APTO", alert
 
 # -------------------------------
-# EXCEL TEMPLATE (sin xlsxwriter)
+# EXCEL TEMPLATE (SIN PANDAS WRITER)
 # -------------------------------
 def generate_excel_template():
-    columns = [
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "RAQSCI_INPUT"
+
+    headers = [
         "Proveedor","Categoria_Kraljic","Evaluador","Fecha","Comentarios",
         "Precio_unitario","Coste_logistico","Coste_inventario","Coste_total_estimado",
         "R_certificaciones","R_cumplimiento","R_ESG",
@@ -71,44 +74,23 @@ def generate_excel_template():
         "I_mejora","I_ID","I_digitalizacion"
     ]
 
-    df = pd.DataFrame(columns=columns)
+    ws.append(headers)
 
-    example = {
-        "Proveedor": "Proveedor Demo",
-        "Categoria_Kraljic": "Estratégica",
-        "Evaluador": "Elymar",
-        "Fecha": "2026-01-01",
-        "Comentarios": "Ejemplo",
-        "Precio_unitario": 10,
-        "Coste_logistico": 1,
-        "Coste_inventario": 0.5,
-        "Coste_total_estimado": 11.5,
-        "R_certificaciones": 4,
-        "R_cumplimiento": 5,
-        "R_ESG": 3,
-        "A_capacidad": 5,
-        "A_dependencia": 4,
-        "A_resiliencia": 4,
-        "Q_defectos": 4,
-        "Q_consistencia": 5,
-        "Q_auditorias": 4,
-        "S_leadtime": 3,
-        "S_flexibilidad": 4,
-        "S_soporte": 4,
-        "C_precio": 4,
-        "C_logistica": 3,
-        "C_inventario": 3,
-        "C_TCO": 4,
-        "I_mejora": 3,
-        "I_ID": 3,
-        "I_digitalizacion": 4
-    }
+    example = [
+        "Proveedor Demo","Estratégica","Elymar","2026-01-01","Ejemplo",
+        10,1,0.5,11.5,
+        4,5,3,
+        5,4,4,
+        4,5,4,
+        3,4,4,
+        4,3,3,4,
+        3,3,4
+    ]
 
-    df = pd.concat([df, pd.DataFrame([example])])
+    ws.append(example)
 
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='RAQSCI_INPUT')
+    wb.save(output)
 
     return output.getvalue()
 
